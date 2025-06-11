@@ -21,6 +21,10 @@ const server = new Server(
 const submitNameDetailsScheme = {
   type: "object",
   properties: {
+    id: {
+      type: "string",
+      description: "ID of the name"
+    },
     arabic: {
       type: "string",
       description: "The Arabic name"
@@ -348,7 +352,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const completeNameData = {
         ...nameDetails,
         id: nameId,
-        status: "completed",
+        status: "SUCCESS",
         submittedAt: new Date().toISOString()
       };
 
@@ -392,7 +396,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             index: NAMES_INDEX,
             body: {
               query: {
-                term: { "status.keyword": "NEW" }
+                term: { "status": "NEW" }
               },
               sort: [{ "createdAt": { "order": "asc" } }],
               size: size,
@@ -400,14 +404,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             }
           });
 
-          const names = response.body.hits.hits.map(hit => ({
+
+
+          const names = response.hits.hits.map(hit => ({
             arabic: hit._source.arabic || "",
             status: hit._source.status || "NEW",
             id: hit._source.id || hit._id
           }));
 
+          console.error(JSON.stringify(names, null, 2))
+
+
           return {
-            total: response.body.hits.total.value,
+            total: response.hits.total.value,
             returned: names.length,
             names: names
           };
