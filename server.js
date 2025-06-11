@@ -196,7 +196,8 @@ function getElasticClient() {
     const {
       ELASTIC_URL = 'http://localhost:9200',
       ELASTIC_USERNAME,
-      ELASTIC_PASSWORD
+      ELASTIC_PASSWORD,
+      ELASTIC_CA_CERT
     } = process.env;
 
     const clientConfig = { node: ELASTIC_URL };
@@ -205,6 +206,13 @@ function getElasticClient() {
       clientConfig.auth = {
         username: ELASTIC_USERNAME,
         password: ELASTIC_PASSWORD
+      };
+    }
+
+    if (ELASTIC_CA_CERT) {
+      clientConfig.tls = {
+        ca: require('fs').readFileSync(ELASTIC_CA_CERT),
+        rejectUnauthorized: false
       };
     }
 
