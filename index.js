@@ -18,6 +18,178 @@ const server = new Server(
   }
 );
 
+const submitNameDetailsScheme = {
+  type: "object",
+  properties: {
+    arabic: {
+      type: "string",
+      description: "The Arabic name"
+    },
+    transliteration: {
+      type: "string",
+      description: "Accurate English transliteration"
+    },
+    meaning: {
+      type: "string",
+      description: "المعنى الدقيق والكامل للاسم باللغة العربية"
+    },
+    origin: {
+      type: "string",
+      description: "الأصل الدقيق للاسم (عربي، فارسي، تركي، إلخ)"
+    },
+    gender: {
+      type: "string",
+      description: "Gender (MALE/FEMALE/UNISEX)"
+    },
+    description: {
+      type: "string",
+      description: "وصف شامل للاسم يتضمن خصائصه ومميزاته باللغة العربية"
+    },
+    culturalSignificance: {
+      type: "string",
+      description: "الأهمية الثقافية والاجتماعية للاسم في الثقافة العربية والإسلامية"
+    },
+    famousPersons: {
+      type: "array",
+      description: "List of famous persons with this name",
+      items: {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+          description: { type: "string" },
+          period: { type: "string" }
+        }
+      }
+    },
+    variations: {
+      type: "array",
+      description: "Name variations",
+      items: {
+        type: "object",
+        properties: {
+          variation: { type: "string" },
+          type: { type: "string" },
+          region: { type: "string" }
+        }
+      }
+    },
+    etymology: {
+      type: "string",
+      description: "أصل الاسم اللغوي والاشتقاقي بالتفصيل باللغة العربية"
+    },
+    linguisticRoot: {
+      type: "string",
+      description: "الجذر اللغوي (ثلاثي أو رباعي)"
+    },
+    numerologyValue: {
+      type: "string",
+      description: "القيمة العددية للاسم حسب علم الأرقام"
+    },
+    numerologyMeaning: {
+      type: "string",
+      description: "معنى الرقم في علم الأرقام باللغة العربية"
+    },
+    personality: {
+      type: "object",
+      properties: {
+        traits: { type: "array", items: { type: "string" } },
+        strengths: { type: "array", items: { type: "string" } },
+        characteristics: { type: "string" }
+      }
+    },
+    compatibility: {
+      type: "object",
+      properties: {
+        compatibleNames: { type: "array", items: { type: "string" } },
+        compatibleSigns: { type: "array", items: { type: "string" } },
+        recommendation: { type: "string" }
+      }
+    },
+    historicalContext: {
+      type: "string",
+      description: "السياق التاريخي لاستخدام الاسم عبر العصور"
+    },
+    religiousSignificance: {
+      type: "string",
+      description: "الأهمية الدينية للاسم في الإسلام إن وجدت"
+    },
+    modernUsage: {
+      type: "string",
+      description: "الاستخدام المعاصر للاسم في العالم العربي"
+    },
+    pronunciationIpa: {
+      type: "string",
+      description: "النطق بالرموز الصوتية الدولية"
+    },
+    pronunciationGuide: {
+      type: "string",
+      description: "دليل النطق باللغة العربية"
+    },
+    relatedNames: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+          transliteration: { type: "string" },
+          relationship: { type: "string" }
+        }
+      }
+    },
+    exploreMoreNames: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+          transliteration: { type: "string" }
+        }
+      }
+    },
+    nameDay: {
+      type: "string",
+      description: "يوم الاسم إن وجد في التقاليد"
+    },
+    popularityRank: {
+      type: "string",
+      description: "ترتيب الشعبية الحالي (1-1000)"
+    },
+    popularityTrend: {
+      type: "string",
+      enum: ["RISING", "FALLING", "STABLE", "NEW", "DECLINING"],
+      description: "Popularity trend"
+    },
+    literaryReferences: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          work: { type: "string" },
+          author: { type: "string" },
+          character: { type: "string" },
+          context: { type: "string" }
+        }
+      }
+    },
+    symbolism: {
+      type: "string",
+      description: "الرمزية والمعاني الرمزية للاسم"
+    },
+    alternativeSpellings: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          spelling: { type: "string" },
+          script: { type: "string" },
+          region: { type: "string" }
+        }
+      }
+    }
+  },
+  required: ["arabic", "transliteration", "meaning", "origin", "gender"]
+}
+
 // Elasticsearch client singleton
 let client;
 
@@ -96,177 +268,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "submit-name-details",
         description: "Submit comprehensive details for an Arabic name",
-        inputSchema: {
-          type: "object",
-          properties: {
-            arabic: {
-              type: "string",
-              description: "The Arabic name"
-            },
-            transliteration: {
-              type: "string",
-              description: "Accurate English transliteration"
-            },
-            meaning: {
-              type: "string",
-              description: "المعنى الدقيق والكامل للاسم باللغة العربية"
-            },
-            origin: {
-              type: "string",
-              description: "الأصل الدقيق للاسم (عربي، فارسي، تركي، إلخ)"
-            },
-            gender: {
-              type: "string",
-              description: "Gender (MALE/FEMALE/UNISEX)"
-            },
-            description: {
-              type: "string",
-              description: "وصف شامل للاسم يتضمن خصائصه ومميزاته باللغة العربية"
-            },
-            culturalSignificance: {
-              type: "string",
-              description: "الأهمية الثقافية والاجتماعية للاسم في الثقافة العربية والإسلامية"
-            },
-            famousPersons: {
-              type: "array",
-              description: "List of famous persons with this name",
-              items: {
-                type: "object",
-                properties: {
-                  name: { type: "string" },
-                  description: { type: "string" },
-                  period: { type: "string" }
-                }
-              }
-            },
-            variations: {
-              type: "array",
-              description: "Name variations",
-              items: {
-                type: "object",
-                properties: {
-                  variation: { type: "string" },
-                  type: { type: "string" },
-                  region: { type: "string" }
-                }
-              }
-            },
-            etymology: {
-              type: "string",
-              description: "أصل الاسم اللغوي والاشتقاقي بالتفصيل باللغة العربية"
-            },
-            linguisticRoot: {
-              type: "string",
-              description: "الجذر اللغوي (ثلاثي أو رباعي)"
-            },
-            numerologyValue: {
-              type: "string",
-              description: "القيمة العددية للاسم حسب علم الأرقام"
-            },
-            numerologyMeaning: {
-              type: "string",
-              description: "معنى الرقم في علم الأرقام باللغة العربية"
-            },
-            personality: {
-              type: "object",
-              properties: {
-                traits: { type: "array", items: { type: "string" } },
-                strengths: { type: "array", items: { type: "string" } },
-                characteristics: { type: "string" }
-              }
-            },
-            compatibility: {
-              type: "object",
-              properties: {
-                compatibleNames: { type: "array", items: { type: "string" } },
-                compatibleSigns: { type: "array", items: { type: "string" } },
-                recommendation: { type: "string" }
-              }
-            },
-            historicalContext: {
-              type: "string",
-              description: "السياق التاريخي لاستخدام الاسم عبر العصور"
-            },
-            religiousSignificance: {
-              type: "string",
-              description: "الأهمية الدينية للاسم في الإسلام إن وجدت"
-            },
-            modernUsage: {
-              type: "string",
-              description: "الاستخدام المعاصر للاسم في العالم العربي"
-            },
-            pronunciationIpa: {
-              type: "string",
-              description: "النطق بالرموز الصوتية الدولية"
-            },
-            pronunciationGuide: {
-              type: "string",
-              description: "دليل النطق باللغة العربية"
-            },
-            relatedNames: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  name: { type: "string" },
-                  transliteration: { type: "string" },
-                  relationship: { type: "string" }
-                }
-              }
-            },
-            exploreMoreNames: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  name: { type: "string" },
-                  transliteration: { type: "string" }
-                }
-              }
-            },
-            nameDay: {
-              type: "string",
-              description: "يوم الاسم إن وجد في التقاليد"
-            },
-            popularityRank: {
-              type: "string",
-              description: "ترتيب الشعبية الحالي (1-1000)"
-            },
-            popularityTrend: {
-              type: "string",
-              enum: ["RISING", "FALLING", "STABLE", "NEW", "DECLINING"],
-              description: "Popularity trend"
-            },
-            literaryReferences: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  work: { type: "string" },
-                  author: { type: "string" },
-                  character: { type: "string" },
-                  context: { type: "string" }
-                }
-              }
-            },
-            symbolism: {
-              type: "string",
-              description: "الرمزية والمعاني الرمزية للاسم"
-            },
-            alternativeSpellings: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  spelling: { type: "string" },
-                  script: { type: "string" },
-                  region: { type: "string" }
-                }
-              }
-            }
-          },
-          required: ["arabic", "transliteration", "meaning", "origin", "gender"]
-        }
+        inputSchema: submitNameDetailsScheme
       }
     ]
   };
@@ -444,17 +446,7 @@ app.get('/tools', async (req, res) => {
         {
           name: "submit-name-details",
           description: "Submit comprehensive details for an Arabic name",
-          inputSchema: {
-            type: "object",
-            properties: {
-              arabic: { type: "string", description: "The Arabic name" },
-              transliteration: { type: "string", description: "Accurate English transliteration" },
-              meaning: { type: "string", description: "المعنى الدقيق والكامل للاسم باللغة العربية" },
-              origin: { type: "string", description: "الأصل الدقيق للاسم (عربي، فارسي، تركي، إلخ)" },
-              gender: { type: "string", description: "Gender (MALE/FEMALE/UNISEX)" }
-            },
-            required: ["arabic", "transliteration", "meaning", "origin", "gender"]
-          }
+          inputSchema: submitNameDetailsScheme
         }
       ]
     };
@@ -472,7 +464,7 @@ app.post('/tools/:toolName', async (req, res) => {
     const toolArgs = req.body;
 
     let result;
-    
+
     switch (toolName) {
       case "read-name": {
         const { nameId } = toolArgs;
@@ -569,7 +561,7 @@ app.get('/', (req, res) => {
 async function main() {
   try {
     const PORT = process.env.PORT || 3000;
-    
+
     app.listen(PORT, '0.0.0.0', () => {
       console.log(`Arabic Names MCP Server running on HTTP port ${PORT} with Elasticsearch integration`);
     });
