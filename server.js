@@ -385,7 +385,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               query: {
                 term: { "status.keyword": "NEW" }
               },
-              sort: [{ "submittedAt": { "order": "asc" } }],
+              sort: [{ "createdAt": { "order": "asc" } }],
               size: size,
               _source: ["arabic", "status", "id"]
             }
