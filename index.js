@@ -38,6 +38,13 @@ function getElasticClient() {
       !ELASTIC_PASSWORD ||
       !ELASTIC_CA_CERT
     ) {
+      console.error({
+        ELASTIC_HOST,
+        ELASTIC_PORT,
+        ELASTIC_USERNAME,
+        ELASTIC_PASSWORD,
+        ELASTIC_CA_CERT
+      });
       throw new Error("Missing one of the ELASTIC_* environment variables");
     }
 
