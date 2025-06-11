@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-import express from 'express';
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { v4 as uuidv4 } from 'uuid';
 import { Client } from '@elastic/elasticsearch';
@@ -210,13 +210,7 @@ function getElasticClient() {
       !ELASTIC_PASSWORD ||
       !ELASTIC_CA_CERT
     ) {
-      console.error({
-        ELASTIC_HOST,
-        ELASTIC_PORT,
-        ELASTIC_USERNAME,
-        ELASTIC_PASSWORD,
-        ELASTIC_CA_CERT
-      });
+      console.error('Missing Elasticsearch environment variables');
       throw new Error("Missing one of the ELASTIC_* environment variables");
     }
 
@@ -269,6 +263,22 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         name: "submit-name-details",
         description: "Submit comprehensive details for an Arabic name",
         inputSchema: submitNameDetailsScheme
+      },
+      {
+        name: "get-oldest-new-names",
+        description: "Get the oldest names with status 'NEW', ordered by submission date",
+        inputSchema: {
+          type: "object",
+          properties: {
+            size: {
+              type: "number",
+              description: "Number of names to return (default: 10, max: 100)",
+              minimum: 1,
+              maximum: 100
+            }
+          },
+          required: []
+        }
       }
     ]
   };
@@ -410,161 +420,74 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
     }
 
+    case "get-oldest-new-names": {
+      const { size = 10 } = args;
+
+      // Validate size parameter
+      if (size < 1 || size > 100) {
+        throw new Error("Size must be between 1 and 100");
+      }
+
+      try {
+        // Search for names with status "NEW", ordered by submittedAt (oldest first)
+        const response = await esClient.search({
+          index: NAMES_INDEX,
+          body: {
+            query: {
+              term: {
+                "status.keyword": "NEW"
+              }
+            },
+            sort: [
+              {
+                "submittedAt": {
+                  "order": "asc" // oldest first
+                }
+              }
+            ],
+            size: size,
+            _source: ["arabic", "status", "id"] // Only return these fields
+          }
+        });
+
+        const names = response.body.hits.hits.map(hit => ({
+          arabic: hit._source.arabic || "",
+          status: hit._source.status || "NEW",
+          id: hit._source.id || hit._id
+        }));
+
+        const result = {
+          total: response.body.hits.total.value,
+          returned: names.length,
+          names: names
+        };
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(result, null, 2)
+            }
+          ]
+        };
+      } catch (error) {
+        console.error('Error searching for oldest new names:', error);
+        throw new Error(`Failed to get oldest new names: ${error.message}`);
+      }
+    }
+
     default:
       throw new Error(`Unknown tool: ${name}`);
   }
 });
 
-// Create Express app
-const app = express();
-app.use(express.json());
-
-// Health check endpoint
-app.get('/health', (req, res) => {
-  res.json({ status: 'healthy', timestamp: new Date().toISOString() });
-});
-
-// MCP tools list endpoint
-app.get('/tools', async (req, res) => {
-  try {
-    const result = {
-      tools: [
-        {
-          name: "read-name",
-          description: "Read an Arabic name and return its basic information",
-          inputSchema: {
-            type: "object",
-            properties: {
-              nameId: {
-                type: "string",
-                description: "The UUID of the name to read"
-              }
-            },
-            required: ["nameId"]
-          }
-        },
-        {
-          name: "submit-name-details",
-          description: "Submit comprehensive details for an Arabic name",
-          inputSchema: submitNameDetailsScheme
-        }
-      ]
-    };
-    res.json(result);
-  } catch (error) {
-    console.error('Error listing tools:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// MCP tool call endpoint
-app.post('/tools/:toolName', async (req, res) => {
-  try {
-    const { toolName } = req.params;
-    const toolArgs = req.body;
-
-    let result;
-
-    switch (toolName) {
-      case "read-name": {
-        const { nameId } = toolArgs;
-        if (!nameId) {
-          return res.status(400).json({ error: "nameId is required" });
-        }
-
-        try {
-          const response = await esClient.get({
-            index: NAMES_INDEX,
-            id: nameId
-          });
-
-          if (response.found) {
-            const nameData = response._source;
-            const basicInfo = {
-              arabic: nameData.arabic || "",
-              status: nameData.status || "pending",
-              id: nameId
-            };
-            result = { content: [{ type: "text", text: JSON.stringify(basicInfo, null, 2) }] };
-          } else {
-            const newEntry = { arabic: "", status: "pending", id: nameId };
-            await esClient.index({ index: NAMES_INDEX, id: nameId, body: newEntry });
-            result = { content: [{ type: "text", text: JSON.stringify(newEntry, null, 2) }] };
-          }
-        } catch (error) {
-          if (error.meta && error.meta.statusCode === 404) {
-            const newEntry = { arabic: "", status: "pending", id: nameId };
-            await esClient.index({ index: NAMES_INDEX, id: nameId, body: newEntry });
-            result = { content: [{ type: "text", text: JSON.stringify(newEntry, null, 2) }] };
-          } else {
-            throw error;
-          }
-        }
-        break;
-      }
-
-      case "submit-name-details": {
-        if (!toolArgs.arabic) {
-          return res.status(400).json({ error: "Arabic name is required" });
-        }
-
-        const nameId = uuidv4();
-        const completeNameData = {
-          ...toolArgs,
-          id: nameId,
-          status: "completed",
-          submittedAt: new Date().toISOString()
-        };
-
-        const response = await esClient.index({
-          index: NAMES_INDEX,
-          id: nameId,
-          body: completeNameData,
-          refresh: 'wait_for'
-        });
-
-        console.log(`Name details stored in Elasticsearch. ID: ${nameId}, Result: ${response.result}`);
-        result = {
-          content: [{
-            type: "text",
-            text: `Name details submitted successfully. ID: ${nameId}\n\n${JSON.stringify(completeNameData, null, 2)}`
-          }]
-        };
-        break;
-      }
-
-      default:
-        return res.status(400).json({ error: `Unknown tool: ${toolName}` });
-    }
-
-    res.json(result);
-  } catch (error) {
-    console.error('Error calling tool:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Root endpoint
-app.get('/', (req, res) => {
-  res.json({
-    name: 'Arabic Names MCP Server',
-    version: '1.0.0',
-    description: 'MCP server for Arabic names with Elasticsearch backend',
-    endpoints: {
-      health: '/health',
-      tools: '/tools',
-      toolCall: '/tools/:toolName'
-    }
-  });
-});
-
 async function main() {
   try {
-    const PORT = process.env.PORT || 3000;
+    // Use stdio transport for standard MCP communication
+    const transport = new StdioServerTransport();
+    await server.connect(transport);
 
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log(`Arabic Names MCP Server running on HTTP port ${PORT} with Elasticsearch integration`);
-    });
+    console.error('Arabic Names MCP Server running with stdio transport and Elasticsearch integration');
   } catch (error) {
     console.error('Failed to start server:', error);
     process.exit(1);
