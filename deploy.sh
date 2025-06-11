@@ -4,14 +4,6 @@
 
 set -e
 
-echo "🏗️  Building Docker image..."
-docker build -t ghcr.io/sahebsoft/arabic-names/mcp-server:latest .
-
-echo "📤 Pushing image to registry..."
-# Replace with your registry
-# docker tag arabic-names-mcp-server:latest your-registry/arabic-names-mcp-server:latest
-# docker push your-registry/arabic-names-mcp-server:latest
-
 echo "🚀 Deploying to Kubernetes..."
 kubectl apply -f ./manifest/k8s-configmap.yaml
 kubectl apply -f ./manifest/k8s-deployment.yaml
