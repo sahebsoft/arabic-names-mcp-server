@@ -230,9 +230,10 @@ async function handleOperation(esOperation, fallbackOperation) {
     } catch (error) {
       console.error('Elasticsearch operation failed, using fallback:', error.message);
       esClient = null; // Disable ES for future operations
+      return fallbackOperation(error);
     }
   }
-  return fallbackOperation();
+
 }
 
 server.setRequestHandler(ListToolsRequestSchema, async () => {
@@ -314,7 +315,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           return newEntry;
         },
         // Fallback operation
-        () => {
+        (error) => {
           let entry = mockStorage.get(nameId);
           if (!entry) {
             entry = { arabic: "", status: "pending", id: nameId };
@@ -355,7 +356,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           return true;
         },
         // Fallback operation
-        () => {
+        (error) => {
           mockStorage.set(nameId, completeNameData);
           return true;
         }
@@ -404,7 +405,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           };
         },
         // Fallback operation  
-        () => {
+        (error) => {
           const newNames = Array.from(mockStorage.values())
             .filter(name => name.status === "NEW")
             .sort((a, b) => new Date(a.submittedAt || 0) - new Date(b.submittedAt || 0))
@@ -419,7 +420,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             total: newNames.length,
             returned: newNames.length,
             names: newNames,
-            note: "Using local storage - Elasticsearch not available"
+            note: "Using local storage - Elasticsearch not available!",
+            error: error
           };
         }
       );
