@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: arabic-names-mcp-server
-  namespace: default
+  namespace: arabic-names
   labels:
     app: arabic-names-mcp-server
     version: v1

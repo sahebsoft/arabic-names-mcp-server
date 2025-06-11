@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: elasticsearch-config
-  namespace: default
+  namespace: arabic-names
   labels:
     app: arabic-names-mcp-server
 data:
