@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: elasticsearch-config
+  namespace: default
+  labels:
+    app: arabic-names-mcp-server
+data:
+  ELASTIC_PORT: "9200",
+  ELASTIC_HOST: "elasticsearch-master.elastic-system.svc.cluster.local",
+  NODE_ENV: "production"
+  # Add any other non-sensitive configuration here
