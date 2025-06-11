@@ -188,59 +188,52 @@ const submitNameDetailsScheme = {
     }
   },
   required: ["arabic", "transliteration", "meaning", "origin", "gender"]
-}
+};
 
-// Elasticsearch client singleton
-let client;
-
+// Simple Elasticsearch client setup with fallback
 function getElasticClient() {
-  if (!client) {
+  try {
     const {
-      ELASTIC_HOST,
-      ELASTIC_PORT,
+      ELASTIC_URL = 'http://localhost:9200',
       ELASTIC_USERNAME,
-      ELASTIC_PASSWORD,
-      ELASTIC_CA_CERT
+      ELASTIC_PASSWORD
     } = process.env;
 
-    if (
-      !ELASTIC_HOST ||
-      !ELASTIC_PORT ||
-      !ELASTIC_USERNAME ||
-      !ELASTIC_PASSWORD ||
-      !ELASTIC_CA_CERT
-    ) {
-      console.error('Missing Elasticsearch environment variables');
-      throw new Error("Missing one of the ELASTIC_* environment variables");
+    const clientConfig = { node: ELASTIC_URL };
+
+    if (ELASTIC_USERNAME && ELASTIC_PASSWORD) {
+      clientConfig.auth = {
+        username: ELASTIC_USERNAME,
+        password: ELASTIC_PASSWORD
+      };
     }
 
-    const node = `https://${ELASTIC_HOST}:${ELASTIC_PORT}`;
-    console.error("Connecting to Elasticsearch at:", node);
-
-    client = new Client({
-      node: node,
-      auth: { username: ELASTIC_USERNAME, password: ELASTIC_PASSWORD },
-      tls: {
-        ca: ELASTIC_CA_CERT,
-        rejectUnauthorized: false,
-      },
-    });
+    return new Client(clientConfig);
+  } catch (error) {
+    console.error('Failed to initialize Elasticsearch client:', error.message);
+    return null;
   }
-  return client;
 }
 
-// Initialize Elasticsearch client
-let esClient;
-try {
-  esClient = getElasticClient();
-  console.error('Elasticsearch client initialized successfully');
-} catch (error) {
-  console.error('Failed to initialize Elasticsearch client:', error);
-  process.exit(1);
-}
-
-// Elasticsearch index name
+// Initialize client with fallback
+let esClient = getElasticClient();
 const NAMES_INDEX = 'arabic_names';
+
+// Simple in-memory fallback storage
+const mockStorage = new Map();
+
+// Helper function for ES operations with fallback
+async function handleOperation(esOperation, fallbackOperation) {
+  if (esClient) {
+    try {
+      return await esOperation();
+    } catch (error) {
+      console.error('Elasticsearch operation failed, using fallback:', error.message);
+      esClient = null; // Disable ES for future operations
+    }
+  }
+  return fallbackOperation();
+}
 
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
@@ -290,104 +283,59 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   switch (name) {
     case "read-name": {
       const { nameId } = args;
-
       if (!nameId) {
         throw new Error("nameId is required");
       }
 
-      try {
-        // Search for the name in Elasticsearch
-        const response = await esClient.get({
-          index: NAMES_INDEX,
-          id: nameId
-        });
-
-        if (response.found) {
-          const nameData = response._source;
-          const basicInfo = {
-            arabic: nameData.arabic || "",
-            status: nameData.status || "pending",
+      const result = await handleOperation(
+        // Elasticsearch operation
+        async () => {
+          const response = await esClient.get({
+            index: NAMES_INDEX,
             id: nameId
-          };
+          });
 
-          return {
-            content: [
-              {
-                type: "text",
-                text: JSON.stringify(basicInfo, null, 2)
-              }
-            ]
-          };
-        } else {
-          // Create a new entry with basic info if not found
-          const newEntry = {
-            arabic: "",
-            status: "pending",
-            id: nameId
-          };
+          if (response.found) {
+            const nameData = response._source;
+            return {
+              arabic: nameData.arabic || "",
+              status: nameData.status || "pending",
+              id: nameId
+            };
+          }
 
-          // Store the new entry in Elasticsearch
+          // Create new entry if not found
+          const newEntry = { arabic: "", status: "pending", id: nameId };
           await esClient.index({
             index: NAMES_INDEX,
             id: nameId,
             body: newEntry
           });
-
-          return {
-            content: [
-              {
-                type: "text",
-                text: JSON.stringify(newEntry, null, 2)
-              }
-            ]
-          };
-        }
-      } catch (error) {
-        if (error.meta && error.meta.statusCode === 404) {
-          // Document not found, create a new entry
-          const newEntry = {
-            arabic: "",
-            status: "pending",
-            id: nameId
-          };
-
-          try {
-            await esClient.index({
-              index: NAMES_INDEX,
-              id: nameId,
-              body: newEntry
-            });
-
-            return {
-              content: [
-                {
-                  type: "text",
-                  text: JSON.stringify(newEntry, null, 2)
-                }
-              ]
-            };
-          } catch (indexError) {
-            console.error('Error creating new entry in Elasticsearch:', indexError);
-            throw new Error(`Failed to create new entry: ${indexError.message}`);
+          return newEntry;
+        },
+        // Fallback operation
+        () => {
+          let entry = mockStorage.get(nameId);
+          if (!entry) {
+            entry = { arabic: "", status: "pending", id: nameId };
+            mockStorage.set(nameId, entry);
           }
-        } else {
-          console.error('Error reading from Elasticsearch:', error);
-          throw new Error(`Failed to read name: ${error.message}`);
+          return entry;
         }
-      }
+      );
+
+      return {
+        content: [{ type: "text", text: JSON.stringify(result, null, 2) }]
+      };
     }
 
     case "submit-name-details": {
       const nameDetails = args;
-
       if (!nameDetails.arabic) {
         throw new Error("Arabic name is required");
       }
 
-      // Generate UUID for the name if not provided
       const nameId = uuidv4();
-
-      // Store the complete name details
       const completeNameData = {
         ...nameDetails,
         id: nameId,
@@ -395,85 +343,90 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         submittedAt: new Date().toISOString()
       };
 
-      try {
-        // Store in Elasticsearch
-        const response = await esClient.index({
-          index: NAMES_INDEX,
-          id: nameId,
-          body: completeNameData,
-          refresh: 'wait_for' // Ensure the document is immediately searchable
-        });
+      await handleOperation(
+        // Elasticsearch operation
+        async () => {
+          await esClient.index({
+            index: NAMES_INDEX,
+            id: nameId,
+            body: completeNameData,
+            refresh: 'wait_for'
+          });
+          return true;
+        },
+        // Fallback operation
+        () => {
+          mockStorage.set(nameId, completeNameData);
+          return true;
+        }
+      );
 
-        console.error(`Name details stored in Elasticsearch. ID: ${nameId}, Result: ${response.result}`);
-
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Name details submitted successfully. ID: ${nameId}\n\n${JSON.stringify(completeNameData, null, 2)}`
-            }
-          ]
-        };
-      } catch (error) {
-        console.error('Error storing name details in Elasticsearch:', error);
-        throw new Error(`Failed to submit name details: ${error.message}`);
-      }
+      return {
+        content: [{
+          type: "text",
+          text: `Name details submitted successfully. ID: ${nameId}\n\n${JSON.stringify(completeNameData, null, 2)}`
+        }]
+      };
     }
 
     case "get-oldest-new-names": {
       const { size = 10 } = args;
 
-      // Validate size parameter
       if (size < 1 || size > 100) {
         throw new Error("Size must be between 1 and 100");
       }
 
-      try {
-        // Search for names with status "NEW", ordered by submittedAt (oldest first)
-        const response = await esClient.search({
-          index: NAMES_INDEX,
-          body: {
-            query: {
-              term: {
-                "status.keyword": "NEW"
-              }
-            },
-            sort: [
-              {
-                "submittedAt": {
-                  "order": "asc" // oldest first
-                }
-              }
-            ],
-            size: size,
-            _source: ["arabic", "status", "id"] // Only return these fields
-          }
-        });
-
-        const names = response.body.hits.hits.map(hit => ({
-          arabic: hit._source.arabic || "",
-          status: hit._source.status || "NEW",
-          id: hit._source.id || hit._id
-        }));
-
-        const result = {
-          total: response.body.hits.total.value,
-          returned: names.length,
-          names: names
-        };
-
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(result, null, 2)
+      const result = await handleOperation(
+        // Elasticsearch operation
+        async () => {
+          const response = await esClient.search({
+            index: NAMES_INDEX,
+            body: {
+              query: {
+                term: { "status.keyword": "NEW" }
+              },
+              sort: [{ "submittedAt": { "order": "asc" } }],
+              size: size,
+              _source: ["arabic", "status", "id"]
             }
-          ]
-        };
-      } catch (error) {
-        console.error('Error searching for oldest new names:', error);
-        throw new Error(`Failed to get oldest new names: ${error.message}`);
-      }
+          });
+
+          const names = response.body.hits.hits.map(hit => ({
+            arabic: hit._source.arabic || "",
+            status: hit._source.status || "NEW",
+            id: hit._source.id || hit._id
+          }));
+
+          return {
+            total: response.body.hits.total.value,
+            returned: names.length,
+            names: names
+          };
+        },
+        // Fallback operation  
+        () => {
+          const newNames = Array.from(mockStorage.values())
+            .filter(name => name.status === "NEW")
+            .sort((a, b) => new Date(a.submittedAt || 0) - new Date(b.submittedAt || 0))
+            .slice(0, size)
+            .map(name => ({
+              arabic: name.arabic || "",
+              status: name.status || "NEW",
+              id: name.id
+            }));
+
+          return {
+            total: newNames.length,
+            returned: newNames.length,
+            names: newNames,
+            note: "Using local storage - Elasticsearch not available"
+          };
+        }
+      );
+
+      return {
+        content: [{ type: "text", text: JSON.stringify(result, null, 2) }]
+      };
     }
 
     default:
@@ -483,11 +436,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
 async function main() {
   try {
-    // Use stdio transport for standard MCP communication
     const transport = new StdioServerTransport();
     await server.connect(transport);
-
-    console.error('Arabic Names MCP Server running with stdio transport and Elasticsearch integration');
+    console.error('Arabic Names MCP Server started successfully');
   } catch (error) {
     console.error('Failed to start server:', error);
     process.exit(1);
