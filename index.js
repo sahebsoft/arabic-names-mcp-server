@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
+import express from 'express';
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { v4 as uuidv4 } from 'uuid';
 import { Client } from '@elastic/elasticsearch';
@@ -413,11 +413,166 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 });
 
+// Create Express app
+const app = express();
+app.use(express.json());
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ status: 'healthy', timestamp: new Date().toISOString() });
+});
+
+// MCP tools list endpoint
+app.get('/tools', async (req, res) => {
+  try {
+    const result = {
+      tools: [
+        {
+          name: "read-name",
+          description: "Read an Arabic name and return its basic information",
+          inputSchema: {
+            type: "object",
+            properties: {
+              nameId: {
+                type: "string",
+                description: "The UUID of the name to read"
+              }
+            },
+            required: ["nameId"]
+          }
+        },
+        {
+          name: "submit-name-details",
+          description: "Submit comprehensive details for an Arabic name",
+          inputSchema: {
+            type: "object",
+            properties: {
+              arabic: { type: "string", description: "The Arabic name" },
+              transliteration: { type: "string", description: "Accurate English transliteration" },
+              meaning: { type: "string", description: "المعنى الدقيق والكامل للاسم باللغة العربية" },
+              origin: { type: "string", description: "الأصل الدقيق للاسم (عربي، فارسي، تركي، إلخ)" },
+              gender: { type: "string", description: "Gender (MALE/FEMALE/UNISEX)" }
+            },
+            required: ["arabic", "transliteration", "meaning", "origin", "gender"]
+          }
+        }
+      ]
+    };
+    res.json(result);
+  } catch (error) {
+    console.error('Error listing tools:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// MCP tool call endpoint
+app.post('/tools/:toolName', async (req, res) => {
+  try {
+    const { toolName } = req.params;
+    const toolArgs = req.body;
+
+    let result;
+    
+    switch (toolName) {
+      case "read-name": {
+        const { nameId } = toolArgs;
+        if (!nameId) {
+          return res.status(400).json({ error: "nameId is required" });
+        }
+
+        try {
+          const response = await esClient.get({
+            index: NAMES_INDEX,
+            id: nameId
+          });
+
+          if (response.found) {
+            const nameData = response._source;
+            const basicInfo = {
+              arabic: nameData.arabic || "",
+              status: nameData.status || "pending",
+              id: nameId
+            };
+            result = { content: [{ type: "text", text: JSON.stringify(basicInfo, null, 2) }] };
+          } else {
+            const newEntry = { arabic: "", status: "pending", id: nameId };
+            await esClient.index({ index: NAMES_INDEX, id: nameId, body: newEntry });
+            result = { content: [{ type: "text", text: JSON.stringify(newEntry, null, 2) }] };
+          }
+        } catch (error) {
+          if (error.meta && error.meta.statusCode === 404) {
+            const newEntry = { arabic: "", status: "pending", id: nameId };
+            await esClient.index({ index: NAMES_INDEX, id: nameId, body: newEntry });
+            result = { content: [{ type: "text", text: JSON.stringify(newEntry, null, 2) }] };
+          } else {
+            throw error;
+          }
+        }
+        break;
+      }
+
+      case "submit-name-details": {
+        if (!toolArgs.arabic) {
+          return res.status(400).json({ error: "Arabic name is required" });
+        }
+
+        const nameId = uuidv4();
+        const completeNameData = {
+          ...toolArgs,
+          id: nameId,
+          status: "completed",
+          submittedAt: new Date().toISOString()
+        };
+
+        const response = await esClient.index({
+          index: NAMES_INDEX,
+          id: nameId,
+          body: completeNameData,
+          refresh: 'wait_for'
+        });
+
+        console.log(`Name details stored in Elasticsearch. ID: ${nameId}, Result: ${response.result}`);
+        result = {
+          content: [{
+            type: "text",
+            text: `Name details submitted successfully. ID: ${nameId}\n\n${JSON.stringify(completeNameData, null, 2)}`
+          }]
+        };
+        break;
+      }
+
+      default:
+        return res.status(400).json({ error: `Unknown tool: ${toolName}` });
+    }
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error calling tool:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Root endpoint
+app.get('/', (req, res) => {
+  res.json({
+    name: 'Arabic Names MCP Server',
+    version: '1.0.0',
+    description: 'MCP server for Arabic names with Elasticsearch backend',
+    endpoints: {
+      health: '/health',
+      tools: '/tools',
+      toolCall: '/tools/:toolName'
+    }
+  });
+});
+
 async function main() {
   try {
-    const transport = new StdioServerTransport();
-    await server.connect(transport);
-    console.error("Arabic Names MCP Server running on stdio with Elasticsearch integration");
+    const PORT = process.env.PORT || 3000;
+    
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`Arabic Names MCP Server running on HTTP port ${PORT} with Elasticsearch integration`);
+    });
   } catch (error) {
     console.error('Failed to start server:', error);
     process.exit(1);
