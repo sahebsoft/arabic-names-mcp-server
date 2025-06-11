@@ -4,9 +4,7 @@
   "description": "MCP server for Arabic names with Elasticsearch backend",
   "type": "module",
   "main": "server.js",
-  "bin": {
-    "arabic-names-mcp": "./server.js"
-  },
+  "bin": "./server.js",
   "files": [
     "server.js",
     "README.md"
