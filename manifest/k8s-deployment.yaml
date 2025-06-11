@@ -20,7 +20,7 @@ spec:
       containers:
       - name: mcp-server
         image: ghcr.io/sahebsoft/arabic-names/mcp-server:latest
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
         ports:
         - containerPort: 3000
           name: http
