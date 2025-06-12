@@ -17,8 +17,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^0.4.0",
-    "@elastic/elasticsearch": "^8.0.0",
-    "uuid": "^9.0.0"
+    "@elastic/elasticsearch": "^8.0.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.0"
@@ -39,10 +38,10 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/arabic-names-mcp-server.git"
+    "url": "https://github.com/sahebsoft/arabic-names-mcp-server.git"
   },
   "bugs": {
-    "url": "https://github.com/yourusername/arabic-names-mcp-server/issues"
+    "url": "https://github.com/sahebsoft/arabic-names-mcp-server/issues"
   },
-  "homepage": "https://github.com/yourusername/arabic-names-mcp-server#readme"
+  "homepage": "https://github.com/sahebsoft/arabic-names-mcp-server#readme"
 }

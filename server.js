@@ -3,7 +3,6 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
-import { v4 as uuidv4 } from 'uuid';
 import { Client } from '@elastic/elasticsearch';
 
 const server = new Server(
@@ -237,7 +236,7 @@ async function handleOperation(esOperation) {
   if (!esClient) {
     throw new Error('Elasticsearch client not available');
   }
-  
+
   try {
     return await esOperation();
   } catch (error) {
@@ -269,7 +268,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         inputSchema: submitNameDetailsScheme
       },
       {
-        name: "get-oldest-new-names",
+        name: "procces-names",
         description: "Get the oldest names with status 'NEW', ordered by submission date",
         inputSchema: {
           type: "object",
@@ -337,10 +336,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         throw new Error("Arabic name is required");
       }
 
-      const nameId = uuidv4();
       const completeNameData = {
         ...nameDetails,
-        id: nameId,
         status: "NEW",
         processDate: new Date().toISOString()
       };
@@ -366,9 +363,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
     }
 
-    case "get-oldest-new-names": {
+    case "procces-names": {
       const { size = 10 } = args;
-      console.error(`get-oldest-new-names called with size: ${size}`);
+      console.error(`get-new-names called with size: ${size}`);
 
       if (size < 1 || size > 100) {
         throw new Error("Size must be between 1 and 100");
@@ -391,7 +388,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           });
 
           console.error(`Elasticsearch response: total hits = ${response.hits.total.value}, returned = ${response.hits.hits.length}`);
-          
+
           const names = response.hits.hits.map(hit => ({
             arabic: hit._source.arabic || "",
             status: hit._source.status || "NEW",
@@ -404,8 +401,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             returned: names.length,
             names: names
           };
-          
-          console.error(`get-oldest-new-names result: ${JSON.stringify(finalResult, null, 2)}`);
+
+          console.error(`procces-names result: ${JSON.stringify(finalResult, null, 2)}`);
           return finalResult;
         }
       );
@@ -420,86 +417,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 });
 
-// Test functions for initialization
-async function testTools() {
-  console.error('=== Starting tool tests ===');
-  
-  try {
-    // Test 1: submit-name-details
-    console.error('Testing submit-name-details...');
-    const testNameData = {
-      arabic: "محمد",
-      transliteration: "Muhammad",
-      meaning: "محمود، مشكور، الذي يحمد كثيراً",
-      origin: "عربي",
-      gender: "MALE",
-      description: "اسم عربي أصيل يحمل معاني الحمد والشكر",
-      culturalSignificance: "من أشهر الأسماء في العالم الإسلامي"
-    };
-    
-    try {
-      const submitResult = await server.request({
-        method: "tools/call",
-        params: {
-          name: "submit-name-details",
-          arguments: testNameData
-        }
-      });
-      console.error('submit-name-details completed successfully');
-      console.error('submit-name-details result:', JSON.stringify(submitResult, null, 2));
-    } catch (submitError) {
-      console.error('submit-name-details failed:', submitError.message);
-    }
-    
-    // Test 2: get-oldest-new-names
-    console.error('Testing get-oldest-new-names...');
-    try {
-      const oldestResult = await server.request({
-        method: "tools/call", 
-        params: {
-          name: "get-oldest-new-names",
-          arguments: { size: 5 }
-        }
-      });
-      console.error('get-oldest-new-names completed successfully');
-      console.error('get-oldest-new-names test result:', JSON.stringify(oldestResult, null, 2));
-    } catch (oldestError) {
-      console.error('get-oldest-new-names failed:', oldestError.message);
-    }
-    
-    // Test 3: read-name (using a test UUID)
-    console.error('Testing read-name...');
-    try {
-      const testUuid = "550e8400-e29b-41d4-a716-446655440000";
-      const readResult = await server.request({
-        method: "tools/call",
-        params: {
-          name: "read-name", 
-          arguments: { nameId: testUuid }
-        }
-      });
-      console.error('read-name completed successfully');
-      console.error('read-name result:', JSON.stringify(readResult, null, 2));
-    } catch (readError) {
-      console.error('read-name failed:', readError.message);
-    }
-    
-  } catch (error) {
-    console.error('Tool test error:', error.message);
-  }
-  
-  console.error('=== Tool tests completed ===');
-}
 
 async function main() {
   try {
     // Initialize Elasticsearch client
     esClient = await getElasticClient();
-    
+
     const transport = new StdioServerTransport();
     await server.connect(transport);
     console.error('Arabic Names MCP Server started successfully');
-    
+
   } catch (error) {
     console.error('Failed to start server:', error);
     process.exit(1);
