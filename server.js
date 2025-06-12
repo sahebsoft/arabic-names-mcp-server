@@ -358,7 +358,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       return {
         content: [{
           type: "text",
-          text: `Name details submitted successfully. ID: ${nameId}\n\n${JSON.stringify(completeNameData, null, 2)}`
+          text: `Name details submitted successfully. ID: ${nameDetails.id}\n\n${JSON.stringify(completeNameData, null, 2)}`
         }]
       };
     }
