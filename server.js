@@ -339,7 +339,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       const completeNameData = {
         ...nameDetails,
-        status: "NEW",
+        status: "SUCCESS",
         processDate: new Date().toISOString()
       };
 
