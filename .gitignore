@@ -145,3 +145,5 @@ secrets/
 # Temporary files
 tmp/
 temp/
+
+mcp.json
