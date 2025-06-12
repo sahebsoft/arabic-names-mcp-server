@@ -347,7 +347,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         async () => {
           await esClient.index({
             index: NAMES_INDEX,
-            id: nameId,
+            id: nameDetails.id,
             body: completeNameData,
             refresh: 'wait_for'
           });
