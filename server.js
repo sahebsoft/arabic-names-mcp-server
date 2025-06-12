@@ -141,6 +141,7 @@ const submitNameDetailsScheme = {
     },
     exploreMoreNames: {
       type: "array",
+      description: "عشرة اسماء جديدة لاسكتشاف المزيد من الاسماء",
       items: {
         type: "object",
         properties: {
@@ -355,10 +356,74 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
       );
 
+      // Extract names from exploreMoreNames and relatedNames to add as NEW entries
+      const namesToProcess = [];
+
+      if (nameDetails.exploreMoreNames && Array.isArray(nameDetails.exploreMoreNames)) {
+        for (const nameEntry of nameDetails.exploreMoreNames) {
+          if (nameEntry.name) {
+            namesToProcess.push({
+              arabic: nameEntry.name,
+              transliteration: nameEntry.transliteration || ""
+            });
+          }
+        }
+      }
+
+      if (nameDetails.relatedNames && Array.isArray(nameDetails.relatedNames)) {
+        for (const nameEntry of nameDetails.relatedNames) {
+          if (nameEntry.name) {
+            namesToProcess.push({
+              arabic: nameEntry.name,
+              transliteration: nameEntry.transliteration || ""
+            });
+          }
+        }
+      }
+
+      // Process each extracted name
+      for (const nameToAdd of namesToProcess) {
+        try {
+          await handleOperation(async () => {
+            // Check if name already exists by searching for the Arabic name
+            const searchResponse = await esClient.search({
+              index: NAMES_INDEX,
+              body: {
+                query: {
+                  term: { "arabic": nameToAdd.arabic }
+                },
+                size: 1
+              }
+            });
+
+            // If name doesn't exist, create a new entry
+            if (searchResponse.hits.total.value === 0) {
+              const newNameId = `name-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+              const newNameData = {
+                id: newNameId,
+                arabic: nameToAdd.arabic,
+                transliteration: nameToAdd.transliteration,
+                status: "NEW",
+                processDate: new Date().toISOString()
+              };
+
+              await esClient.index({
+                index: NAMES_INDEX,
+                id: newNameId,
+                body: newNameData,
+                refresh: 'wait_for'
+              });
+            }
+          });
+        } catch (error) {
+          console.error(`Failed to process name "${nameToAdd.arabic}":`, error.message);
+        }
+      }
+
       return {
         content: [{
           type: "text",
-          text: `Name details submitted successfully. ID: ${nameDetails.id}\n\n${JSON.stringify(completeNameData, null, 2)}`
+          text: `Name details submitted successfully. ID: ${nameDetails.id}\nProcessed ${namesToProcess.length} additional names from exploreMoreNames and relatedNames.\n\n${JSON.stringify(completeNameData, null, 2)}`
         }]
       };
     }
