@@ -195,7 +195,7 @@ const submitNameDetailsScheme = {
 };
 
 // Simple Elasticsearch client setup with fallback
-function getElasticClient() {
+async function getElasticClient() {
   try {
     const {
       ELASTIC_URL = 'http://localhost:9200',
@@ -214,8 +214,9 @@ function getElasticClient() {
     }
 
     if (ELASTIC_CA_CERT) {
+      const fs = await import('fs');
       clientConfig.tls = {
-        ca: require('fs').readFileSync(ELASTIC_CA_CERT),
+        ca: fs.readFileSync(ELASTIC_CA_CERT),
         rejectUnauthorized: false
       };
     }
@@ -227,25 +228,22 @@ function getElasticClient() {
   }
 }
 
-// Initialize client with fallback
-let esClient = getElasticClient();
+// Initialize client later in main function
+let esClient = null;
 const NAMES_INDEX = 'arabic_names';
 
-// Simple in-memory fallback storage
-const mockStorage = new Map();
-
-// Helper function for ES operations with fallback
-async function handleOperation(esOperation, fallbackOperation) {
-  if (esClient) {
-    try {
-      return await esOperation();
-    } catch (error) {
-      console.error('Elasticsearch operation failed, using fallback:', error.message);
-      esClient = null; // Disable ES for future operations
-      return fallbackOperation(error);
-    }
+// Helper function for ES operations
+async function handleOperation(esOperation) {
+  if (!esClient) {
+    throw new Error('Elasticsearch client not available');
   }
-
+  
+  try {
+    return await esOperation();
+  } catch (error) {
+    console.error('Elasticsearch operation failed:', error.message);
+    throw error;
+  }
 }
 
 server.setRequestHandler(ListToolsRequestSchema, async () => {
@@ -325,15 +323,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             body: newEntry
           });
           return newEntry;
-        },
-        // Fallback operation
-        (error) => {
-          let entry = mockStorage.get(nameId);
-          if (!entry) {
-            entry = { arabic: "", status: "pending", id: nameId };
-            mockStorage.set(nameId, entry);
-          }
-          return entry;
         }
       );
 
@@ -352,8 +341,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const completeNameData = {
         ...nameDetails,
         id: nameId,
-        status: "SUCCESS",
-        submittedAt: new Date().toISOString()
+        status: "NEW",
+        processDate: new Date().toISOString()
       };
 
       await handleOperation(
@@ -365,11 +354,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             body: completeNameData,
             refresh: 'wait_for'
           });
-          return true;
-        },
-        // Fallback operation
-        (error) => {
-          mockStorage.set(nameId, completeNameData);
           return true;
         }
       );
@@ -384,6 +368,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     case "get-oldest-new-names": {
       const { size = 10 } = args;
+      console.error(`get-oldest-new-names called with size: ${size}`);
 
       if (size < 1 || size > 100) {
         throw new Error("Size must be between 1 and 100");
@@ -392,54 +377,36 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const result = await handleOperation(
         // Elasticsearch operation
         async () => {
+          console.error(`Searching for NEW names with size limit: ${size}`);
           const response = await esClient.search({
             index: NAMES_INDEX,
             body: {
               query: {
                 term: { "status": "NEW" }
               },
-              sort: [{ "createdAt": { "order": "asc" } }],
+              sort: [{ "processDate": { "order": "asc" } }],
               size: size,
-              _source: ["arabic", "status", "id"]
+              _source: ["arabic", "status", "id", "processDate"]
             }
           });
 
-
-
+          console.error(`Elasticsearch response: total hits = ${response.hits.total.value}, returned = ${response.hits.hits.length}`);
+          
           const names = response.hits.hits.map(hit => ({
             arabic: hit._source.arabic || "",
             status: hit._source.status || "NEW",
-            id: hit._source.id || hit._id
+            id: hit._source.id || hit._id,
+            processDate: hit._source.processDate
           }));
 
-          console.error(JSON.stringify(names, null, 2))
-
-
-          return {
+          const finalResult = {
             total: response.hits.total.value,
             returned: names.length,
             names: names
           };
-        },
-        // Fallback operation  
-        (error) => {
-          const newNames = Array.from(mockStorage.values())
-            .filter(name => name.status === "NEW")
-            .sort((a, b) => new Date(a.submittedAt || 0) - new Date(b.submittedAt || 0))
-            .slice(0, size)
-            .map(name => ({
-              arabic: name.arabic || "",
-              status: name.status || "NEW",
-              id: name.id
-            }));
-
-          return {
-            total: newNames.length,
-            returned: newNames.length,
-            names: newNames,
-            note: "Using local storage - Elasticsearch not available!",
-            error: error
-          };
+          
+          console.error(`get-oldest-new-names result: ${JSON.stringify(finalResult, null, 2)}`);
+          return finalResult;
         }
       );
 
@@ -453,11 +420,86 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 });
 
+// Test functions for initialization
+async function testTools() {
+  console.error('=== Starting tool tests ===');
+  
+  try {
+    // Test 1: submit-name-details
+    console.error('Testing submit-name-details...');
+    const testNameData = {
+      arabic: "محمد",
+      transliteration: "Muhammad",
+      meaning: "محمود، مشكور، الذي يحمد كثيراً",
+      origin: "عربي",
+      gender: "MALE",
+      description: "اسم عربي أصيل يحمل معاني الحمد والشكر",
+      culturalSignificance: "من أشهر الأسماء في العالم الإسلامي"
+    };
+    
+    try {
+      const submitResult = await server.request({
+        method: "tools/call",
+        params: {
+          name: "submit-name-details",
+          arguments: testNameData
+        }
+      });
+      console.error('submit-name-details completed successfully');
+      console.error('submit-name-details result:', JSON.stringify(submitResult, null, 2));
+    } catch (submitError) {
+      console.error('submit-name-details failed:', submitError.message);
+    }
+    
+    // Test 2: get-oldest-new-names
+    console.error('Testing get-oldest-new-names...');
+    try {
+      const oldestResult = await server.request({
+        method: "tools/call", 
+        params: {
+          name: "get-oldest-new-names",
+          arguments: { size: 5 }
+        }
+      });
+      console.error('get-oldest-new-names completed successfully');
+      console.error('get-oldest-new-names test result:', JSON.stringify(oldestResult, null, 2));
+    } catch (oldestError) {
+      console.error('get-oldest-new-names failed:', oldestError.message);
+    }
+    
+    // Test 3: read-name (using a test UUID)
+    console.error('Testing read-name...');
+    try {
+      const testUuid = "550e8400-e29b-41d4-a716-446655440000";
+      const readResult = await server.request({
+        method: "tools/call",
+        params: {
+          name: "read-name", 
+          arguments: { nameId: testUuid }
+        }
+      });
+      console.error('read-name completed successfully');
+      console.error('read-name result:', JSON.stringify(readResult, null, 2));
+    } catch (readError) {
+      console.error('read-name failed:', readError.message);
+    }
+    
+  } catch (error) {
+    console.error('Tool test error:', error.message);
+  }
+  
+  console.error('=== Tool tests completed ===');
+}
+
 async function main() {
   try {
+    // Initialize Elasticsearch client
+    esClient = await getElasticClient();
+    
     const transport = new StdioServerTransport();
     await server.connect(transport);
     console.error('Arabic Names MCP Server started successfully');
+    
   } catch (error) {
     console.error('Failed to start server:', error);
     process.exit(1);
