@@ -538,17 +538,50 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 throw new Error("Arabic name is required");
             }
 
-            const completeNameData = {
-                ...nameDetails,
-                status: "SUCCESS",
-                lastUpdated: new Date().toISOString(),
-                processDate: nameDetails.processDate || new Date().toISOString()
-            };
+            const now = new Date().toISOString();
 
             await handleOperation(async () => {
+                let createdAt = now;
+                let createdBy = "system";
+
+                if (nameDetails.id) {
+                    try {
+                        const response = await esClient.get({
+                            index: NAMES_INDEX,
+                            id: nameDetails.id,
+                            _source_includes: ["createdAt", "createdBy"]
+                        });
+                        if (response.found && response._source) {
+                            if (response._source.createdAt) {
+                                createdAt = response._source.createdAt;
+                            }
+                            if (response._source.createdBy) {
+                                createdBy = response._source.createdBy;
+                            }
+                        }
+                    } catch (error) {
+                        // If not found, it's a new document, defaults are fine.
+                        // Log other errors if necessary but don't fail the save.
+                        if (error.meta && error.meta.statusCode !== 404) {
+                            console.warn(`Audit field retrieval for ${nameDetails.id} failed: ${error.message}`);
+                        }
+                    }
+                }
+
+                const completeNameData = {
+                    ...nameDetails,
+                    status: "SUCCESS",
+                    lastUpdated: now, // existing field, keep it consistent with updatedAt
+                    processDate: nameDetails.processDate || now, // existing field
+                    updatedAt: now, // new audit field
+                    updatedBy: "system", // new audit field
+                    createdAt: createdAt, // new audit field (conditionally set)
+                    createdBy: createdBy  // new audit field (conditionally set)
+                };
+
                 await esClient.index({
                     index: NAMES_INDEX,
-                    id: nameDetails.id,
+                    id: nameDetails.id, // id is critical for create vs update
                     body: completeNameData,
                     refresh: 'wait_for'
                 });
@@ -1075,7 +1108,7 @@ async function main() {
                                 gender: { type: "keyword" },
                                 status: { type: "keyword" },
                                 priority: { type: "keyword" },
-                                popularityRank: { type: "integer" },
+                                popularityRank: { "type": "keyword" },
                                 popularityTrend: { type: "keyword" },
                                 processDate: { type: "date" },
                                 lastUpdated: { type: "date" },
@@ -1083,7 +1116,86 @@ async function main() {
                                     type: "text",
                                     fields: { keyword: { type: "keyword" } }
                                 },
-                                numerologyValue: { type: "integer" },
+                                numerologyValue: { "type": "keyword" },
+                                numerologyMeaning: { "type": "text", "analyzer": "arabic" },
+                                nameDay: { "type": "text" },
+                                seasonalAssociation: { "type": "text" },
+                                colorAssociation: { "type": "text" },
+                                gemstoneAssociation: { "type": "text" },
+                                famousPersons: {
+                                    "type": "nested",
+                                    "properties": {
+                                        "name": { "type": "text", "fields": { "keyword": { "type": "keyword" } } },
+                                        "description": { "type": "text", "analyzer": "arabic" },
+                                        "period": { "type": "text", "fields": { "keyword": { "type": "keyword" } } },
+                                        "field": { "type": "text", "fields": { "keyword": { "type": "keyword" } } }
+                                    }
+                                },
+                                variations: {
+                                    "type": "nested",
+                                    "properties": {
+                                        "variation": { "type": "text", "fields": { "keyword": { "type": "keyword" } } },
+                                        "type": { "type": "text", "fields": { "keyword": { "type": "keyword" } } },
+                                        "region": { "type": "text", "fields": { "keyword": { "type": "keyword" } } },
+                                        "script": { "type": "text", "fields": { "keyword": { "type": "keyword" } } }
+                                    }
+                                },
+                                personality: {
+                                    "type": "object",
+                                    "properties": {
+                                        "traits": { "type": "keyword" },
+                                        "strengths": { "type": "keyword" },
+                                        "characteristics": { "type": "text", "analyzer": "arabic" }
+                                    }
+                                },
+                                compatibility: {
+                                    "type": "object",
+                                    "properties": {
+                                        "compatibleNames": { "type": "keyword" },
+                                        "compatibleSigns": { "type": "keyword" },
+                                        "recommendation": { "type": "text", "analyzer": "arabic" }
+                                    }
+                                },
+                                relatedNames: {
+                                    "type": "nested",
+                                    "properties": {
+                                        "name": { "type": "text", "fields": { "keyword": { "type": "keyword" } } },
+                                        "transliteration": { "type": "text", "fields": { "keyword": { "type": "keyword" } } },
+                                        "relationship": { "type": "text", "fields": { "keyword": { "type": "keyword" } } }
+                                    }
+                                },
+                                exploreMoreNames: {
+                                    "type": "nested",
+                                    "properties": {
+                                        "name": { "type": "text", "fields": { "keyword": { "type": "keyword" } } },
+                                        "transliteration": { "type": "text", "fields": { "keyword": { "type": "keyword" } } },
+                                        "brief_meaning": { "type": "text", "analyzer": "arabic" }
+                                    }
+                                },
+                                literaryReferences: {
+                                    "type": "nested",
+                                    "properties": {
+                                        "work": { "type": "text", "fields": { "keyword": { "type": "keyword" } } },
+                                        "author": { "type": "text", "fields": { "keyword": { "type": "keyword" } } },
+                                        "character": { "type": "text", "fields": { "keyword": { "type": "keyword" } } },
+                                        "context": { "type": "text", "analyzer": "arabic" },
+                                        "period": { "type": "text", "fields": { "keyword": { "type": "keyword" } } }
+                                    }
+                                },
+                                alternativeSpellings: {
+                                    "type": "nested",
+                                    "properties": {
+                                        "spelling": { "type": "text", "fields": { "keyword": { "type": "keyword" } } },
+                                        "script": { "type": "text", "fields": { "keyword": { "type": "keyword" } } },
+                                        "region": { "type": "text", "fields": { "keyword": { "type": "keyword" } } },
+                                        "frequency": { "type": "text", "fields": { "keyword": { "type": "keyword" } } }
+                                    }
+                                },
+                                createdAt: { "type": "date" },
+                                updatedAt: { "type": "date" },
+                                createdBy: { "type": "keyword" },
+                                updatedBy: { "type": "keyword" },
+                                id: { "type": "keyword" }, // For querying the ID field itself
                                 description: { type: "text", analyzer: "arabic" },
                                 culturalSignificance: { type: "text", analyzer: "arabic" },
                                 etymology: { type: "text", analyzer: "arabic" },
