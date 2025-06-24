@@ -17,6 +17,19 @@ const server = new Server(
     }
 );
 
+function transliterationToSlug(transliteration) {
+    if (!transliteration || typeof transliteration !== 'string') {
+        return '';
+    }
+
+    return transliteration
+        .toLowerCase()
+        .trim()
+        .replace(/[^\w\s-]/g, '')
+        .replace(/[\s_-]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+}
+
 const nameDetailsSchema = {
     type: "object",
     properties: {
@@ -237,6 +250,10 @@ const nameDetailsSchema = {
         gemstoneAssociation: {
             type: "string",
             description: "Gemstones or precious stones associated with the name"
+        },
+        slug: {
+            type: "string",
+            description: "URL-friendly slug generated from transliteration, used as identifier"
         }
     },
     required: ["arabic", "transliteration", "meaning", "origin", "gender"]
@@ -415,11 +432,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                     properties: {
                         arabicName: {
                             type: "string",
-                            description: "The Arabic name to add to research queue"
+                            description: "The Arabic name to add to research queue (required)"
                         },
                         transliteration: {
                             type: "string",
-                            description: "English transliteration of the name (if known)"
+                            description: "English transliteration of the name (required)"
                         },
                         priority: {
                             type: "string",
@@ -549,15 +566,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
             const now = new Date().toISOString();
 
+            // Generate slug from transliteration
+            const slug = transliterationToSlug(nameDetails.transliteration);
+
+            // Use slug as ID if not provided, otherwise use existing ID
+            const recordId = nameDetails.id || slug;
+
             await handleOperation(async () => {
                 let createdAt = now;
                 let createdBy = "system";
 
-                if (nameDetails.id) {
+                if (recordId) {
                     try {
                         const response = await esClient.get({
                             index: NAMES_INDEX,
-                            id: nameDetails.id,
+                            id: recordId,
                             _source_includes: ["createdAt", "createdBy"]
                         });
                         if (response.found && response._source) {
@@ -572,13 +595,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                         // If not found, it's a new document, defaults are fine.
                         // Log other errors if necessary but don't fail the save.
                         if (error.meta && error.meta.statusCode !== 404) {
-                            console.warn(`Audit field retrieval for ${nameDetails.id} failed: ${error.message}`);
+                            console.warn(`Audit field retrieval for ${recordId} failed: ${error.message}`);
                         }
                     }
                 }
 
                 const completeNameData = {
                     ...nameDetails,
+                    id: recordId,
+                    slug: slug,
                     lastUpdated: now, // existing field, keep it consistent with updatedAt
                     processDate: nameDetails.processDate || now, // existing field
                     updatedAt: now, // new audit field
@@ -589,7 +614,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
                 await esClient.index({
                     index: NAMES_INDEX,
-                    id: nameDetails.id, // id is critical for create vs update
+                    id: recordId, // id is critical for create vs update
                     body: completeNameData,
                     refresh: 'wait_for'
                 });
@@ -608,25 +633,34 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
             let addedCount = 0;
             for (const nameEntry of additionalNames) {
-                if (nameEntry.name) {
+                if (nameEntry.name && nameEntry.transliteration) {
+                    const slug = transliterationToSlug(nameEntry.transliteration);
+
                     try {
                         await handleOperation(async () => {
                             const searchResponse = await esClient.search({
                                 index: NAMES_INDEX,
                                 body: {
                                     query: {
-                                        term: { "arabic.keyword": nameEntry.name }
+                                        bool: {
+                                            should: [
+                                                { term: { "arabic.keyword": nameEntry.name } },
+                                                { term: { "slug": slug } }
+                                            ]
+                                        }
                                     },
                                     size: 1
                                 }
                             });
 
                             if (searchResponse.hits.total.value === 0) {
-                                const newNameId = `name-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+                                // Generate slug-based ID if transliteration is provided, otherwise use random ID
+
                                 const newNameData = {
-                                    id: newNameId,
+                                    id: slug,
                                     arabic: nameEntry.name,
                                     transliteration: nameEntry.transliteration || "",
+                                    slug: slug,
                                     brief_meaning: nameEntry.brief_meaning || "",
                                     status: "NEW",
                                     priority: "MEDIUM",
@@ -636,7 +670,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
                                 await esClient.index({
                                     index: NAMES_INDEX,
-                                    id: newNameId,
+                                    id: slug,
                                     body: newNameData,
                                     refresh: 'wait_for'
                                 });
@@ -652,7 +686,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             return {
                 content: [{
                     type: "text",
-                    text: `✅ Name research saved successfully!\n\nName: ${nameDetails.arabic} (${nameDetails.transliteration})\nID: ${nameDetails.id}\nAdded ${addedCount} new names to research queue.\n\nSummary:\n- Meaning: ${nameDetails.meaning}\n- Origin: ${nameDetails.origin}\n- Gender: ${nameDetails.gender}\n- Status: SUCCESS`
+                    text: `✅ Name research saved successfully!\n\nName: ${nameDetails.arabic} (${nameDetails.transliteration})\nID: ${recordId}\nSlug: ${slug}\nAdded ${addedCount} new names to research queue.\n\nSummary:\n- Meaning: ${nameDetails.meaning}\n- Origin: ${nameDetails.origin}\n- Gender: ${nameDetails.gender}\n- Status: ${nameDetails.status}`
                 }]
             };
         }
@@ -911,7 +945,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
 
         case "add_name_to_research_queue": {
-            const { arabicName, transliteration = "", priority = "MEDIUM", source = "", notes = "" } = args;
+            const { arabicName, transliteration, priority = "MEDIUM", source = "", notes = "" } = args;
+            const slug = transliterationToSlug(transliteration);
+
+            if (!arabicName || !transliteration) {
+                return {
+                    success: false,
+                    message: "Invlid call , please define arabicName & transliteration args",
+                    existing_name: existingResponse.hits.hits[0]._source
+                };
+            }
 
             const result = await handleOperation(async () => {
                 // Check if name already exists
@@ -919,7 +962,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                     index: NAMES_INDEX,
                     body: {
                         query: {
-                            term: { "arabic.keyword": arabicName }
+                            bool: {
+                                should: [
+                                    { term: { "arabic.keyword": arabicName } },
+                                    { term: { "slug": slug } }
+                                ]
+                            }
                         },
                         size: 1
                     }
@@ -933,12 +981,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                     };
                 }
 
-                // Add new name to research queue
-                const newNameId = `name-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+
                 const newNameData = {
-                    id: newNameId,
+                    id: slug,
                     arabic: arabicName,
                     transliteration: transliteration,
+                    slug: slug,
                     status: "NEW",
                     priority: priority,
                     processDate: new Date().toISOString(),
@@ -948,7 +996,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
                 await esClient.index({
                     index: NAMES_INDEX,
-                    id: newNameId,
+                    id: slug,
                     body: newNameData,
                     refresh: 'wait_for'
                 });
@@ -964,7 +1012,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 content: [{
                     type: "text",
                     text: result.success
-                        ? `✅ Added "${arabicName}" to research queue\n\nID: ${result.name_data.id}\nPriority: ${priority}\nStatus: NEW`
+                        ? `✅ Added "${arabicName}" to research queue\n\nID: ${result.name_data.id}\nSlug: ${result.name_data.slug || 'N/A'}\nPriority: ${priority}\nStatus: NEW`
                         : `❌ ${result.message}\n\nExisting name: ${result.existing_name?.arabic} (${result.existing_name?.transliteration})`
                 }]
             };
@@ -1099,6 +1147,10 @@ async function main() {
                     body: {
                         mappings: {
                             properties: {
+                                "slug": {
+                                    "type": "keyword",
+                                    "index": true
+                                },
                                 arabic: {
                                     type: "text",
                                     fields: { keyword: { type: "keyword" } },
