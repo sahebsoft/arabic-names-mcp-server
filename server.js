@@ -543,6 +543,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 throw new Error("Arabic name is required");
             }
 
+            if (nameDetails.status != "SUCCESS" && nameDetails.status != "INVALID") {
+                throw new Error("Invalid Status , use SUCCESS or INVALID");
+            }
+
             const now = new Date().toISOString();
 
             await handleOperation(async () => {
@@ -575,7 +579,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
                 const completeNameData = {
                     ...nameDetails,
-                    status: "SUCCESS",
                     lastUpdated: now, // existing field, keep it consistent with updatedAt
                     processDate: nameDetails.processDate || now, // existing field
                     updatedAt: now, // new audit field
