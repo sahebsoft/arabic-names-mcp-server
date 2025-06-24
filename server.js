@@ -24,6 +24,11 @@ const nameDetailsSchema = {
             type: "string",
             description: "Unique identifier for the name entry"
         },
+        status: {
+            type: "string",
+            enum: ["SUCCESS", "INVALID"],
+            description: "Status of Research , SUCCESS for Valid Arabic Names And INVALID for Invalid Names (but u still can suggest releated names)"
+        },
         arabic: {
             type: "string",
             description: "The Arabic name in Arabic script (e.g., محمد, فاطمة, عبدالله)"
@@ -347,7 +352,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                         },
                         status: {
                             type: "string",
-                            enum: ["NEW", "SUCCESS", "PENDING"],
+                            enum: ["NEW", "SUCCESS", "PENDING", "INVALID"],
                             description: "Filter by processing status"
                         },
                         limit: {
