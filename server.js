@@ -294,7 +294,7 @@ async function getElasticClient() {
 }
 
 let esClient = null;
-const NAMES_INDEX = 'arabic_names_v2';
+const NAMES_INDEX = 'arabic_names_v3';
 
 // Helper function for ES operations
 async function handleOperation(esOperation) {
