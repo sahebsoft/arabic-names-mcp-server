@@ -711,7 +711,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                     total_pending: response.hits.total.value,
                     returned: response.hits.hits.length,
                     names: response.hits.hits.map(hit => ({
-                        id: hit._source.id || hit._id,
+                        id: hit._id,
                         arabic: hit._source.arabic || "",
                         transliteration: hit._source.transliteration || "",
                         status: hit._source.status || "NEW",
