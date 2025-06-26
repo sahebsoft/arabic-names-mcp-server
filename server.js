@@ -173,7 +173,7 @@ const nameDetailsSchema = {
         },
         relatedNames: {
             type: "array",
-            description: "Names with similar roots, meanings, or connections",
+            description: "Arabic Baby Names with similar roots, meanings, or connections",
             items: {
                 type: "object",
                 properties: {
@@ -185,7 +185,7 @@ const nameDetailsSchema = {
         },
         exploreMoreNames: {
             type: "array",
-            description: "Ten additional names for further exploration",
+            description: "Ten additional Arabic Baby names for further exploration",
             items: {
                 type: "object",
                 properties: {
